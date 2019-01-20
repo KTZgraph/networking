@@ -25,7 +25,7 @@ public:
 		//inny sposób to wywoływanie _mu.lock() i _mu.unlock() funckji, co jest NIEzalecane !
 
 		//3. Sposób blokowanie mutexu - unique_lock
-		unique_lock<mutex> locker(_mu); //podobny do lock_guard ale wprowadza większą elastycznosć
+		// unique_lock<mutex> locker(_mu); //podobny do lock_guard ale wprowadza większą elastycznosć, tutaj bez parametru defer_lock
 		//unique_lock provides a more flexible way to implement finer-grained lock 
 		//with unique_lock you can even construct the locker without actually locking the mutex to do that trzeba dodac dodatkowy parametr defer_lock
 		unique_lock<mutex> locker(_mu, defer_lock); //now the locker is the owner of the mutex, but mutex is not locked yet
