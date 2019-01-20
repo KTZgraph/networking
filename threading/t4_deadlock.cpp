@@ -126,25 +126,18 @@ int main() {
 }
 
 
-/*Dodatkowe info - odwrócenie kolejności mutexów powinno spowodowac mi deadlocka; 
-    ale w visual studio code nie spowodowało :<; dlaczego? tego jeszcze nie wiem, ale moze kiedyś się dowiem
-public:
-	LogFile() {
-		f.open("log_t3_3.txt");
-	} 
+/* Poniżej wersja z zakleszczeniem class LogFile {
+
 	void shared_print(string id, int value) {
-		lock_guard<mutex> locker(m_mutex); //pierwszy lockde
+		lock_guard<mutex> locker(m_mutex); //locker to nie szablon, przyjmuje obiket jako parametr
 		lock_guard<mutex> locker2(m_mutex2); //drugi mutex
 		cout << "From " << id << ": " << value << endl;
 	}
 
 	void shared_print2(string id, int value) {
-        lock_guard<mutex> locker2(m_mutex2); //drugi mutex
+		lock_guard<mutex> locker2(m_mutex2); //drugi mutex
 		lock_guard<mutex> locker(m_mutex); //locker to nie szablon, przyjmuje obiket jako parametr
 		cout << "From " << id << ": " << value << endl;
 	}
-
-};
-
 
 */
