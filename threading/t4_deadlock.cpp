@@ -40,8 +40,8 @@ ________________________________________________________________
 
 		void shared_print2(string id, int value) {
 		//kolejnosc blokowania mutexów jak w innej funkcji tutaj `shared_print` 
+        	lock_guard<mutex> locker2(m_mutex2); //drugi mutex
 			lock_guard<mutex> locker(m_mutex); //pierwszy mutex
-			lock_guard<mutex> locker2(m_mutex2); //drugi mutex
 			cout << "From " << id << ": " << value << endl;
 		}
 
@@ -56,11 +56,11 @@ ______________________________________________________________________________
 *          Locking Granularity          *
 *****************************************
 	- Fine-granined lock: protects small amount of data
-	- Coarse-grained lock : protexts big amount of data
+        If yours locks are to fine-grained then your program becomes tricky and you are more exposed to deadlock
 
-If yours locks are to fine-grained then your program becomes tricky and you are more exposed to deadlock
-If yours logs are to coarse-grained the you're loosing big oportunity of pararell computing because many 
-	threads will spend a lot of time for the resources  
+	- Coarse-grained lock : protexts big amount of data
+        If yours locks are to coarse-grained then you're loosing big oportunity of pararell computing because many 
+        threads will spend a lot of time for the resources  
 
 */
 
@@ -98,9 +98,9 @@ public:
 	}
 
 	void shared_print2(string id, int value) {
-		lock_guard<mutex> locker(m_mutex); //locker to nie szablon, przyjmuje obiket jako parametr
-
-		lock_guard<mutex> locker2(m_mutex2); //drugi mutex
+        lock(m_mutex, m_mutex2);
+		lock_guard<mutex> locker(m_mutex, adopt_lock); //locker to nie szablon, przyjmuje obiket jako parametr
+		lock_guard<mutex> locker2(m_mutex2, adopt_lock); //drugi mutex
 		cout << "From " << id << ": " << value << endl;
 	}
 
