@@ -1,5 +1,5 @@
 /*****************************************************
-	unique_lock vs lock_guard
+  [Rozwiązanie]	nadmiarowosć mutexów - once_flag
 ******************************************************
 */
 
@@ -15,7 +15,7 @@ class LogFile {
 private:
 	mutex _mu; // mutex do zsynchronizowania zapisu do pliku - ale takich operacji moze być bardzo dużo
 	//mutex _mu_open; //drugi mutex, do otwierania pliku który ma byc otwarty tylko raz - nadmiarowy mutex, lepsza flaga
-	once_flag _flag;
+	once_flag _flag; //rozwiązanie nadmaowości mutexu
 	ofstream _f;
 
 public:
@@ -44,7 +44,9 @@ public:
 		//dzięki temu życie staje się prostsze a cały program porządny <3
 
 		unique_lock<mutex> locker(_mu, defer_lock); //now the locker is the owner of the mutex, but mutex is not locked yet
+		locker.lock();
 		_f << "From " << id << ": " << value << endl; //tylko to printowanie ma być synchornizowae za pomocą mutexa
+		locker.unlock();
 
 
 };
