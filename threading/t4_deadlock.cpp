@@ -3,7 +3,7 @@
  ***************************************************
  1.Pomysl czy na serio potrzebujesz dwóch czy więcej mutexów? w tym samym czasie; jeśli nie to używaj tylko jednego mutexu
 	-> Prefer locking single mutex at the time: 
-		void sharepd_print2(string id, int value){
+		void sharepd_print2(string id, int value){ // NIE robić w ten sposób - brzydko!
 			{
 				lock_guard<mutex> locker(m_mutex);
 				//.. Do something
