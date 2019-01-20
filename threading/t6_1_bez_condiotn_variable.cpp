@@ -12,7 +12,7 @@
 #include <deque>
 using namespace std;
 
-deque<int> q; //globalna zmienna Double-ended queue
+deque<int> q; //globalna zmienna Double-ended queue - kolejka wsłdzielona przez oba wątki t1, t2
 mutex mu; //globalny mutex
 
 void function_1() {//producent danych
@@ -21,9 +21,9 @@ void function_1() {//producent danych
 	int count = 10;
 	while (count > 0) {
 		//w pętli while dodaje elemnt, a potem zasypia na sekundę, a potem znowu wraca do pętli
-		unique_lock<mutex> locker(mu);
+		unique_lock<mutex> locker(mu); //po stworzeniu obiketu lockera mutex jest zablokowany
 		q.push_front(count);
-		locker.unlock();
+		locker.unlock(); //odblokowanie mutexy po dodaniu elementu do kolejnki
 		this_thread::sleep_for(chrono::seconds(1));
 		count--;
 	}
@@ -44,7 +44,7 @@ void function_2() {//konsument danych
 			data = q.back(); //jesli kolejka nie jest pusta pobiera ostatni element
 			q.pop_back();
 			locker.unlock();
-			cout << "t2 got a value from t1: " << data << endl; //wypisuje wartość
+			cout << "t2 got a value from t1: " << data << endl; //wypisuje wartość ze wsłdzielonej kolejki
 		}
 		else {
 			locker.unlock();

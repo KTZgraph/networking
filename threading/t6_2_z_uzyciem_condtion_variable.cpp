@@ -14,7 +14,7 @@ using namespace std;
 
 deque<int> q; //globalna zmienna Double-ended queue
 mutex mu; //globalny mutex
-condition_variable cond; //zmienna typu condition_variable (zmienna stanowa) do oszacowania czasu jaki wątek ma spać
+condition_variable cond; //zmienna typu condition_variable (zmienna stanowa) informuje wątek kiedy ma się obudzić
 
 void function_1() {//producent danych
 	//oba watki zanim dobiora sie do danych blokuja mutex, to jest ok bo `q` kolejka jest współdzieloną pamiecią
@@ -55,7 +55,7 @@ void function_2() {//konsument danych
 			// nie chcesz zablokowac wszsytkich kiedy śpisz
 			// więc przed  funkcją wait wywołanie sleep'a w wątku2 nalezy dblokowac mutexa, a dopiero po odblokowaniu iść spać
 		//thread t2 jest budzony przez powiadomienie z wątku1 a wtedy zostanie zablokowany mutex na nowo, a potem dopiero zacznie dobiera się do danych z `q`
-		//a po pobraniu danych będzię odblokowywanie wąku locker.unlock()
+		//a po pobraniu danych będzię odblokowywanie mutexu locker.unlock()
 		//ponieważ blokujemy i odblokowujemy mutex wiele razy musimy użyć unique_lock<mutex> locker<mu);
 		//for condition variable we cannot use lock_guard
 
@@ -66,13 +66,13 @@ void function_2() {//konsument danych
 			//which is a predicate that determinses whether the condition is reallu met for the thread to 
 			//contnue running and in this case we'll use a lambda function - jeżeli `q` nie jest puste 
 				// - jeśli wątek2 się obudzi i zobaczy, że `q` jest puste wątek wróci do spania
-				// - jeśli wątek2 się obudzi i zobaczy, że `q` NIE jest puste to pobierze dane z `data`
+				// - jeśli wątek2 się obudzi i zobaczy, że `q` NIE jest puste to pobierze dane z `q.back()`
 
 		//Nalezy dodać, ze może być więcej niż jeden wątek, który czeka na ten sam stan condition, jeżeli to jest zadaniem (więcej wątków czekajacyh na ten sam warunek)
 		// jesli wywołam cond.notify_one() to obudzę tylko jeden z wątków czekajacych na to samo powiadomienie
 			//jeśli chce się obudzić wszsytkie takie wątki to nalezy wyołać cond.notify_all() - to obuszi wszsytkie watki
 
-		//po obudszeniu wątek will pop of the data process the data ang to the next loop, and waiting for the next data to availble
+		//po obudszeniu wątek will pop of the data, process the data and go to the next loop, and waiting for the next data to availble
 
 		//condition variables są dobre do synchonizowania wykonania sekwencji wątków 
 		
