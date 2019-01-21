@@ -12,7 +12,7 @@ using namespace std;
 int factorial(int N) {
 	int res = 1;
 	for (int i = N; i > 1; i--)
-		res *= 1;
+		res *= i;
 
 	cout << "Result is: " << res << endl;
 	return res;
