@@ -34,7 +34,7 @@ int main() {
 
 	//4 sposób
 	call_once(once_flag, a, 6);
-	//which takes a once flag and then color by object arguments so as you see this kind of usage of using 
+	//which takes a once flag and then callable object with  arguments so as you see this kind of usage of using 
 	//a collable object followed by aa variable number of arguments is quite popular in standard library
 
 	return 0;
