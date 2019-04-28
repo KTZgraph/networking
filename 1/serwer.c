@@ -9,7 +9,11 @@
  * Tworzenie obiektu gniazd dla klieta
  * 1. Wątki - obsługa polaczen od wielu klientow
  * 2. Pokazywanie listy dostępnych dla klienta plików
- * 3. Przesylanie za pomocą socketów pliku 
+ * 3. Przesylanie za pomocą socketów wybranego przez klienta pliku 
+ * 
+ * 
+ *     gcc serwer.c -lpthread -o S
+
  */
 
 #include <sys/types.h>
@@ -23,17 +27,27 @@
 #include <stddef.h>
 #include <netdb.h>
 #include <dirent.h>  // do listowania plikow w folderze
+#include<pthread.h> // do watkow; uwaga na komende klompilacji! [gcc serwer.c -lpthread -o S]
+#include <fcntl.h> // for open
+#include <unistd.h> // for close
 
 
-#define SERVER_PORT_NUMBER 12346
+#define SERVER_PORT_NUMBER 12345
 #define BACKLOG 10 // ilosc dozwolonych połczeńw kolejce przychodzących
 #define BUFFER_SIZE 10000
 #define SOCKET_DATA_LENGTH 1024 // do obierania i wysylania danych recv() i send()
+
 char BUF[BUFFER_SIZE]; //globalna zmienna na bufor
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; //semafor do blokowania
 
 
+/********************* Deklaracje ****************************/
+char* get_message_from_client(int client_socket);
+void * server_handler(void * client_socket);
+int accept_connection(int server_socket, struct sockaddr_in server_struct);
 
 
+/*************************** Definicje /***************************/
 struct sockaddr_in  create_server_struct(int server_port){
     /* Zwraca obiekt gniazda serwera
     
@@ -70,7 +84,7 @@ int create_socket_TCP(){
     return socket(AF_INET, SOCK_STREAM, 0);
 }
 
-int bind_server_socket(int sdsocket, struct sockaddr_in myaddr){
+void bind_server_socket(int sdsocket, struct sockaddr_in myaddr){
     /* binduje gniazdo; UWAGA bind jest tylko z moją strukturą gniazda; nie z klienta łaczącego się zdalnie
     struktura sockaddr jest  i sockaddr_in (in od internet) są równorzędne; 
     ta druga powstała przez programitów aby ułatwić sobie pracę
@@ -102,21 +116,58 @@ int bind_server_socket(int sdsocket, struct sockaddr_in myaddr){
     if(bind(sdsocket, (struct sockaddr* ) &myaddr, addrlen) < 0){
         //bind() w przypadku błedu zwraca -1
         printf("[ERROR] Bind sie nie pwoiodl :<\n");
-        return -1;
+            exit(-1);
     }
     printf("Bind sie udał\n");
-    return 1;
 }
 
-void transfer_file_to_client(){
+void start_listen(int server_socket){
+    /*Serwer rzpoczyna nasłuchiwanie
+
+    listen(int sockfd, int backlog);
+        gdzie: sockfd - deskryptor gniazda serwera zwrócony rzez socket()
+                backlog - ilosć dozwolonych połaczęń w kolejsce przychodzacych
+    listen() zwraca -1 w przypadku błedu i ustawia odpowiednio zmienna errno
+    */
+
+    if (listen(server_socket, BACKLOG) == -1){
+       printf("[Error] Listen sie nie powiodl\n");
+       exit(-1);
+   }
+   printf("Listen sie powiodl\n");
+}
+
+int transfer_file_to_client(int client_socket, char* filename ){
     /*Przesyła wybrany plik do klienta*/
+    
+    char file_data[SOCKET_DATA_LENGTH];
+
+    FILE *fs = fopen(filename, "r");
+    if(fs == NULL)
+    {
+        printf("[ERROR] Brak pliku '%s'. :< \n", filename);
+        return -2;
+    }
+
+    bzero(file_data, SOCKET_DATA_LENGTH); 
+
+    int fs_block_sz; 
+
+    while((fs_block_sz = fread(file_data, sizeof(char), SOCKET_DATA_LENGTH, fs))>0)
+    {
+        if(send(client_socket, file_data, fs_block_sz, 0) < 0)
+        {
+            printf("[ERROR] Send nie wysłał pliku '%s' :<.\n", filename);
+            return -1;
+        }
+        bzero(file_data, SOCKET_DATA_LENGTH);
+    }
+    printf("Udało sie wysłać plik '%s' do kleinta <3 \n", filename);
+    return 1;
+
 }
 
-void read_selected_file(){
-    /*Odczytuje wybrany przez klienta plik*/
-}
-
-char * list_all_files_in_directory(){
+char* list_all_files_in_directory(){
     /*
     Zwraca listę plików jakie klient może pobrać
     - ograniczam sie do jednego folderu gdzie uruchamiany 
@@ -158,81 +209,142 @@ char * list_all_files_in_directory(){
     return filename_list;
 }
 
-int listen_for_client(int *sockfd){
-    /*Czeka na połączenia przychodzące - czeka na klienta
-
-    listen(int sockfd, int backlog);
-        gdzie: sockfd - deskryptor gniazda serwera zwrócony rzez socket()
-                backlog - ilosć dozwolonych połaczęń w kolejsce przychodzacych
-    */
-   if (listen(*sockfd, BACKLOG) < 1){
-       printf("[ERROR] listen sie nie powiodł :<\n");
-
-       return -1;
-   }
-   printf("Listen sie powiodl\n");
-   return 1;
-}
 
 int accept_connection(int server_socket, struct sockaddr_in server_struct){
     /* akcpetuje polaczenie na gniezdzie 
     Czeka aż będzie jakieś połaczenie
 
-    recv(sockfd, msg, len, 0);
+    zwraca socket dla clienta
     */
+
     int client_socket;
     int struct_len = (sizeof(struct sockaddr_in));
     printf("Proba accept\n\n");
 
-    client_socket = accept(server_socket, (struct sockaddr *)&server_struct, &struct_len );
-    
-    if (client_socket < 0 ){
+	
+    client_socket = accept(server_socket, (struct sockaddr *)&server_struct, &struct_len);
+        //dopoki klienci sie lacza tworz nowe watki dla klientow przychodzacych
+
+    if (client_socket < 0 ){ // nieudane accept()
         printf("[Error] Accept się nie powiódł\n");
-        return -1;
+        return -1; // nie wylaczam progeamu gdy np jeden z wielu klientow sie nie polaczyl
     }
 
-    int len  = 1024;
-    printf("Accept sie powidodł\n");
-    char *response_msg = malloc( sizeof(char) * len);
-    recv(client_socket, response_msg, len, 0 );
-    printf("Od klienta: %s\n", response_msg);
     return client_socket;
+}
+
+void send_message_to_client(int client_socket, char * msg){
+    /*Wysyła wiadomosc do klienta
+    @param int client_socket - gniazdo/deskryptor klienta
+    @param char *msg wiadomosc do klienta(string)
+    */
+    int send_length = send(client_socket,  
+        msg, 
+        strlen(msg), 0);
+    
+    if (send_length == 0){
+        printf("[Error] nie udało sie wysłac wiadomosci do klienta\n");
+    }
+
+    // get_message_from_client(client_socket);
+}
+
+char* get_message_from_client(int client_socket){
+    /* Odbiera wiadomosc od klienta; sprawdza tresc - 
+    
+    jesli sa tam slowa kluczowe opcji to je wywoluje
+    @param int client_socket - gniazdo/deskryptor klienta
+    */
+
+    char *response_msg = malloc( sizeof(char) * SOCKET_DATA_LENGTH);
+    recv(client_socket, response_msg, SOCKET_DATA_LENGTH, 0 );
+    printf("[Klient]: %s\n", response_msg);
+
+    return response_msg;
+}
+
+void end_client_connection(int client_socket){
+    /*Zamyka polaczenie z klientem*/
+    printf("Zakoczenie polaczenia z klientem\n");
+    close(client_socket);
+
+}
+
+
+void* server_handler(void * thread_socket){ //Najrrudniejsza funkcja [!]
+    /* Handler dla watku klienta
+    w watkach przekazywanie warosic jest trudniejsze i dziwniejsze
+
+    @ param: thread_socket - socket klienta do watku zwrocony przez accept() z accept_connection()
+    */
+   
+    pthread_mutex_lock(&lock); //semafor blokuje
+
+    static char message_from_client[SOCKET_DATA_LENGTH]; // iadomosc od klienta
+    int read_size, write_size;
+    int client_socket = *(int*) thread_socket; // client_socket zostanie zamkniety tutaj
+    printf("Funkcja Server handler\n");
+
+
+    //wyslanie takiego mojego ACK Z serwera DO klienta
+    send_message_to_client(client_socket, "Serwer wita :)\n");
+
+    
+    send_message_to_client(client_socket, "Połaczono z serwerem"); //komunita od serwera do klienta - takie moje ACK
+    char* client_response = get_message_from_client(client_socket);
+    printf("[Klient] %s", client_response);
+
+    
+    // while(recv(client_socket, strlen()))){
+
+    // }
+
+    free(thread_socket);
+    printf("Exit socketThread \n");
+    close(client_socket);
+    pthread_exit(NULL);
+    return 0;
 }
 
 int main(){
     printf("Czekam na połaczenie \n\n\n");
     struct sockaddr_in myaddr, endpoint;
-    int server_socket, sdconnection;
+    int server_socket, client_socket;
     int  received;
     int server_port = SERVER_PORT_NUMBER;
 
     server_socket = create_socket_TCP();
-
     myaddr = create_server_struct(server_port);
-    if (bind_server_socket(server_socket, myaddr) == -1){
-        return -1;
+
+    bind_server_socket(server_socket, myaddr); //1. Bindowanie
+    start_listen(server_socket); //2. Rozpoczenie nasluchu
+
+    // Akceptacja przychodzace polaczenie klienta
+    pthread_t clients_thread_list[20];
+    int i = 0; //licznik watkow; i jakos mi bardziej pasuje jak Licznik
+    while(1){
+        //Pętla główna dla serwera do akceptowania klientow i 
+        client_socket = accept_connection(server_socket, myaddr); //zawiesza program aż połączy się klient
+
+        
+        //for each client request creates a thread and assign the client request to it to process
+       //so the main thread can entertain next request
+        if( pthread_create(&clients_thread_list[i], NULL, server_handler, &client_socket) != 0 )
+           printf("Failed to create thread\n");
+        if( i >= BACKLOG)
+        {
+          i = 0; //licznik watkow
+          while(i < BACKLOG)
+          {
+            pthread_join(clients_thread_list[i++],NULL); //joinowanie watkow w glownym watku main
+          }
+          i = 0; //licznik watkow
+        }
     }
-
-   int a;
-   a = listen(server_socket, BACKLOG);
-   printf("Listen zwrocil: %d\n", a);
-
-    
-
-    int client_socket = accept_connection(server_socket, myaddr); //zawiesza program aż połączy się klient
-    char *filename_list = list_all_files_in_directory();
-
-    printf("filenam list: %s\n\n", filename_list);
-
-    int b = send(client_socket,  
-        filename_list, 
-        strlen(filename_list), 0);
-    printf("Send zwrocil: %d\n\n", b);
-
-
-
-
-
+    // calal lista plikow dostepnych dla klienta do przeslania
+    // char *filename_list = list_all_files_in_directory();
+    // send_message_to_client(client_socket, filename_list);
+    // transfer_file_to_client(client_socket, "a.py");
 
     close(server_socket);
     return 0;
