@@ -42,12 +42,13 @@ pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; //semafor do blokowania
 
 
 /********************* Deklaracje ****************************/
-char* get_message_from_client(int client_socket);
+int get_message_from_client(int client_socket);
 void * server_handler(void * client_socket);
 int accept_connection(int server_socket, struct sockaddr_in server_struct);
-
+void end_client_connection(int client_socket);
 
 /*************************** Definicje /***************************/
+
 struct sockaddr_in  create_server_struct(int server_port){
     /* Zwraca obiekt gniazda serwera
     
@@ -116,6 +117,7 @@ void bind_server_socket(int sdsocket, struct sockaddr_in myaddr){
     if(bind(sdsocket, (struct sockaddr* ) &myaddr, addrlen) < 0){
         //bind() w przypadku błedu zwraca -1
         printf("[ERROR] Bind sie nie pwoiodl :<\n");
+
             exit(-1);
     }
     printf("Bind sie udał\n");
@@ -184,7 +186,7 @@ char* list_all_files_in_directory(){
         while ((dir = readdir(d)) != NULL) {
         // printf("%s\n", dir->d_name);
           if (dir->d_type == DT_REG){ // bez tego wyswietla tez foldery a nie pliki
-                printf("%s\n", dir->d_name);
+                // printf("%s\n", dir->d_name);
 
                 filename_list_length += sizeof(filename_list)/ sizeof(filename_list[0]);
 
@@ -233,8 +235,8 @@ int accept_connection(int server_socket, struct sockaddr_in server_struct){
     return client_socket;
 }
 
-void send_message_to_client(int client_socket, char * msg){
-    /*Wysyła wiadomosc do klienta
+int send_message_to_client(int client_socket, char * msg){
+    /*Wysyła wiadomosc do klienta; czsami wiadomosc jest dluzsza 
     @param int client_socket - gniazdo/deskryptor klienta
     @param char *msg wiadomosc do klienta(string)
     */
@@ -244,28 +246,92 @@ void send_message_to_client(int client_socket, char * msg){
     
     if (send_length == 0){
         printf("[Error] nie udało sie wysłac wiadomosci do klienta\n");
+        return -1;
     }
 
-    // get_message_from_client(client_socket);
+    return 1;
 }
 
-char* get_message_from_client(int client_socket){
-    /* Odbiera wiadomosc od klienta; sprawdza tresc - 
+char* find_filename_in_message(char* client_message){
+    /*znajduje nazwe pliku pomiedzy znakami <nazwa_pliku.rozszerzenie>
+    i ją zwraca - do komunikacji z klientem by przeslac mu wybrany przez siebie plik
+    zakłdam że znaki < - informujacy o początku nazwy pliku
+    i znak `>` informujacy że ońcyz się nazwa pliku ystępuje tylko raz; 
+    gdyby zakonczenia wystepowały wielokrotnie należy użyć `str.find_last_of(STOPDELIMITER);`
+    */
+    client_message = "[3]<a.py>";
+    int message_len = strlen(client_message);
+    int start = -1; //poczatkowy indeks
+    int stop = -1; //koncowy indeks
+
+    int i =0;
+    while(i < message_len){
+        if(client_message[i] == '<'){
+            start = i+1;
+        }
+        if(client_message[i] == '>'){
+            stop = i-1;
+        }
+        i++;
+    }
+
+    char* filename = malloc(sizeof(char)*(stop-start+1)); //na razie alokuje na jeden znak
+    int j = start;
+    for(j; j<= stop; j++ ){
+        filename[j-start] = client_message[j];
+    }
+    filename[stop] = '\0';
+
+    return filename;
+}
+
+int get_message_from_client(int client_socket){ //Cała komunikacja i sterowanie z kliente,
+    /* Odbiera wiadomosc od klienta; sprawdza tresc -
+    Klient wysyła pojedyncze wiadomosci lub `[2]<nazwa_pliku.rozszerzenie>` 
+    dlatego nie zwiększam bufora response_msg
+
+    jeśli klient wysłał widomosc o tresci [3] zamyka połączenie z tym klientem
     
     jesli sa tam slowa kluczowe opcji to je wywoluje
     @param int client_socket - gniazdo/deskryptor klienta
     */
 
     char *response_msg = malloc( sizeof(char) * SOCKET_DATA_LENGTH);
-    recv(client_socket, response_msg, SOCKET_DATA_LENGTH, 0 );
-    printf("[Klient]: %s\n", response_msg);
 
-    return response_msg;
+    while(1) {
+        // spawdza występowanie słowa np `[1]`, `[2]`, `[3]` w odpowiedzi klienta
+        printf("[Klient]: %s\n", response_msg);
+        recv(client_socket, response_msg, SOCKET_DATA_LENGTH, 0 );
+
+        if ( strstr(response_msg, "[1]")){
+            printf("TUTAJ [1]");
+            // jeśli klietn wybrał pierszą opcję to wysyła klientowi liste plikow
+            char* filename_list = list_all_files_in_directory();
+            send_message_to_client(client_socket, filename_list);
+        }
+
+        if ( strstr(response_msg, "[2]")){
+            send_message_to_client(client_socket, "Przesylanie pliku");
+            // sprawdzanie nazwy pliku
+            char* filename = find_filename_in_message(response_msg);
+            transfer_file_to_client( client_socket, filename );
+        }
+
+        if ( strstr(response_msg, "[3]")){
+            end_client_connection(client_socket);
+            return 1;
+        }
+
+    };
+
+    end_client_connection(client_socket);
+    return 1;
 }
 
 void end_client_connection(int client_socket){
     /*Zamyka polaczenie z klientem*/
     printf("Zakoczenie polaczenia z klientem\n");
+    send_message_to_client(client_socket, "[Serwer] Połaczenie zamkniete przez klienta");
     close(client_socket);
 
 }
@@ -278,7 +344,7 @@ void* server_handler(void * thread_socket){ //Najrrudniejsza funkcja [!]
     @ param: thread_socket - socket klienta do watku zwrocony przez accept() z accept_connection()
     */
    
-    pthread_mutex_lock(&lock); //semafor blokuje
+    // pthread_mutex_lock(&lock); //niepotrzebny nie wspoldziele danych miedzy klientami
 
     static char message_from_client[SOCKET_DATA_LENGTH]; // iadomosc od klienta
     int read_size, write_size;
@@ -289,19 +355,16 @@ void* server_handler(void * thread_socket){ //Najrrudniejsza funkcja [!]
     //wyslanie takiego mojego ACK Z serwera DO klienta
     send_message_to_client(client_socket, "Serwer wita :)\n");
 
-    
-    send_message_to_client(client_socket, "Połaczono z serwerem"); //komunita od serwera do klienta - takie moje ACK
-    char* client_response = get_message_from_client(client_socket);
-    printf("[Klient] %s", client_response);
+    if (get_message_from_client(client_socket)){
+        printf("Klient sam sie rozaczyl\n");
+        pthread_exit(NULL);
+        return 0;
+    }
 
-    
-    // while(recv(client_socket, strlen()))){
 
-    // }
-
-    free(thread_socket);
-    printf("Exit socketThread \n");
-    close(client_socket);
+    if (client_socket){
+            end_client_connection(client_socket); // zamykanie po zakonczeniue komunikacji jak sie nie uda  w get_message_from_client
+    }
     pthread_exit(NULL);
     return 0;
 }
@@ -310,11 +373,10 @@ int main(){
     printf("Czekam na połaczenie \n\n\n");
     struct sockaddr_in myaddr, endpoint;
     int server_socket, client_socket;
-    int  received;
-    int server_port = SERVER_PORT_NUMBER;
+    int server_port = SERVER_PORT_NUMBER; // na sztywno ustawiono dla szybszego testowania/ bez inputu
 
-    server_socket = create_socket_TCP();
-    myaddr = create_server_struct(server_port);
+    server_socket = create_socket_TCP(); //tworzenie gnaizda dla serwera
+    myaddr = create_server_struct(server_port); //struktura przechowujaca dane serwera
 
     bind_server_socket(server_socket, myaddr); //1. Bindowanie
     start_listen(server_socket); //2. Rozpoczenie nasluchu
@@ -326,26 +388,21 @@ int main(){
         //Pętla główna dla serwera do akceptowania klientow i 
         client_socket = accept_connection(server_socket, myaddr); //zawiesza program aż połączy się klient
 
-        
-        //for each client request creates a thread and assign the client request to it to process
-       //so the main thread can entertain next request
+        // mu
         if( pthread_create(&clients_thread_list[i], NULL, server_handler, &client_socket) != 0 )
            printf("Failed to create thread\n");
-        if( i >= BACKLOG)
+        if( i >= BACKLOG) //gdzie BACKLOG to parametr z funkcji listen() 
+        //mowiąca o maksymalnej liczbie połaczeń w kolejnce; po cichu z reguły ustawiona na 5 lub 10
         {
           i = 0; //licznik watkow
-          while(i < BACKLOG)
-          {
+          while(i < BACKLOG){
+            // musi byc joinowanie w watku glownym, bo inaczej main nie czeka na zakonczenie dzialania watku klietna
             pthread_join(clients_thread_list[i++],NULL); //joinowanie watkow w glownym watku main
           }
           i = 0; //licznik watkow
         }
     }
-    // calal lista plikow dostepnych dla klienta do przeslania
-    // char *filename_list = list_all_files_in_directory();
-    // send_message_to_client(client_socket, filename_list);
-    // transfer_file_to_client(client_socket, "a.py");
 
-    close(server_socket);
+    close(server_socket); //zamykanie serwera
     return 0;
 }
